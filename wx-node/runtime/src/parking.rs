@@ -1,3 +1,4 @@
+use codec::{Decode, Encode};
 /// A runtime module template with necessary imports
 
 /// Feel free to remove or edit this file as needed.
@@ -17,13 +18,31 @@ pub trait Trait: system::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
 }
 
+// #[derive(Encode, Decode, Clone, PartialEq, Eq)]
+#[derive(Encode, Decode)]
+pub struct ParkingLot {
+    // name:
+    // description:
+    capacity: u32,
+    min_price: u32,
+    max_price: u32,
+}
+
+#[derive(Encode, Decode)]
+pub struct ParkingInfo<T: Trait> {
+    parking_log_id: T::AccountId,
+    // start_time: u32,
+}
+
 // This module's storage items.
 decl_storage! {
-    trait Store for Module<T: Trait> as TemplateModule {
+    trait Store for Module<T: Trait> as Parking {
         // Just a dummy storage item.
         // Here we are declaring a StorageValue, `Something` as a Option<u32>
         // `get(something)` is the default getter which returns either the stored `u32` or `None` if nothing stored
         Something get(something): Option<u32>;
+        ParkingLots: map (T::AccountId) => Option<ParkingLot>;
+        Tickets: map (T::AccountId) => Option<ParkingInfo<T>>;
     }
 }
 
@@ -48,6 +67,26 @@ decl_module! {
 
             // here we are raising the Something event
             Self::deposit_event(RawEvent::SomethingStored(something, who));
+            Ok(())
+        }
+
+        pub fn new_parking_log(origin, capacity: u32, min_price: u32, max_price: u32) -> Result {
+            let who = ensure_signed(origin)?;
+            Ok(())
+        }
+
+        pub fn parking_fee(origin, parking_lot: T::AccountId) -> Result {
+            let who = ensure_signed(origin)?;
+            Ok(())
+        }
+
+        pub fn entering(origin, parking_lot: T::AccountId) -> Result {
+            let who = ensure_signed(origin)?;
+            Ok(())
+        }
+
+        pub fn leaving(origin) -> Result {
+            let who = ensure_signed(origin)?;
             Ok(())
         }
     }
@@ -116,7 +155,7 @@ mod tests {
     impl Trait for Test {
         type Event = ();
     }
-    type TemplateModule = Module<Test>;
+    type Parking = Module<Test>;
 
     // This function basically just builds a genesis storage key/value store according to
     // our desired mockup.
@@ -132,9 +171,9 @@ mod tests {
         with_externalities(&mut new_test_ext(), || {
             // Just a dummy test for the dummy funtion `do_something`
             // calling the `do_something` function with a value 42
-            assert_ok!(TemplateModule::do_something(Origin::signed(1), 42));
+            assert_ok!(Parking::do_something(Origin::signed(1), 42));
             // asserting that the stored value is equal to what we stored
-            assert_eq!(TemplateModule::something(), Some(42));
+            assert_eq!(Parking::something(), Some(42));
         });
     }
 }
