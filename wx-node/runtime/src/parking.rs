@@ -1,4 +1,6 @@
 use codec::{Decode, Encode};
+use rstd::{prelude::*, result};
+use sr_primitives::traits::Hash;
 /// A runtime module template with necessary imports
 
 /// Feel free to remove or edit this file as needed.
@@ -7,9 +9,10 @@ use codec::{Decode, Encode};
 
 /// For more guidance on Substrate modules, see the example module
 /// https://github.com/paritytech/substrate/blob/master/srml/example/src/lib.rs
-use support::{decl_event, decl_module, decl_storage, dispatch::Result, StorageValue, StorageMap, ensure, traits::Currency};
-use rstd::{prelude::*, result};
-use sr_primitives::traits::{Hash};
+use support::{
+    decl_event, decl_module, decl_storage, dispatch::Result, ensure, traits::Currency, StorageMap,
+    StorageValue,
+};
 use system::ensure_signed;
 
 /// The module's configuration trait.
@@ -31,7 +34,7 @@ pub struct ParkingLot<T: Trait> {
     max_price: T::Balance,
 }
 
-impl <T: Trait> ParkingLot<T> {
+impl<T: Trait> ParkingLot<T> {
     pub fn fee(&self, _cur_time: u64) -> u64 {
         unimplemented!()
     }
@@ -177,9 +180,7 @@ decl_module! {
     }
 }
 
-impl <T: Trait> Module<T> {
-
-}
+impl<T: Trait> Module<T> {}
 
 decl_event!(
     pub enum Event<T>
