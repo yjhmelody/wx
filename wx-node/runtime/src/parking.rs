@@ -7,42 +7,75 @@ use codec::{Decode, Encode};
 
 /// For more guidance on Substrate modules, see the example module
 /// https://github.com/paritytech/substrate/blob/master/srml/example/src/lib.rs
-use support::{decl_event, decl_module, decl_storage, dispatch::Result, StorageValue};
+use support::{decl_event, decl_module, decl_storage, dispatch::Result, StorageValue, StorageMap, ensure, traits::Currency};
+use rstd::{prelude::*, result};
+use sr_primitives::traits::{Hash};
 use system::ensure_signed;
 
 /// The module's configuration trait.
-pub trait Trait: system::Trait {
+pub trait Trait: balances::Trait {
     // TODO: Add other types and constants required configure this module.
 
     /// The overarching event type.
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
 }
 
-// #[derive(Encode, Decode, Clone, PartialEq, Eq)]
-#[derive(Encode, Decode)]
-pub struct ParkingLot {
-    // name:
-    // description:
+#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Encode, Decode, Default, Clone, PartialEq)]
+pub struct ParkingLot<T: Trait> {
+    name: Vec<u8>,
+    owner: T::AccountId,
+    pub remain: u32,
     capacity: u32,
-    min_price: u32,
-    max_price: u32,
+    min_price: T::Balance,
+    max_price: T::Balance,
 }
 
-#[derive(Encode, Decode)]
+impl <T: Trait> ParkingLot<T> {
+    pub fn fee(&self, _cur_time: u64) -> u64 {
+        unimplemented!()
+    }
+}
+
+#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Encode, Decode, Default, Clone, PartialEq, Eq)]
 pub struct ParkingInfo<T: Trait> {
-    parking_log_id: T::AccountId,
-    // start_time: u32,
+    user_id: T::AccountId,
+    parking_lot_hash: T::Hash,
+    info_hash: T::Hash,
+}
+
+impl<T: Trait> ParkingInfo<T> {
+    pub fn new(user_id: T::AccountId, parking_lot_hash: T::Hash, info_hash: T::Hash) -> Self {
+        Self {
+            user_id,
+            parking_lot_hash,
+            info_hash,
+        }
+    }
+}
+
+#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Encode, Decode, Default)]
+pub struct ParkingOwnerInfo<T: Trait> {
+    id: T::AccountId,
+    parking_lot_count: u32,
 }
 
 // This module's storage items.
 decl_storage! {
     trait Store for Module<T: Trait> as Parking {
-        // Just a dummy storage item.
-        // Here we are declaring a StorageValue, `Something` as a Option<u32>
-        // `get(something)` is the default getter which returns either the stored `u32` or `None` if nothing stored
         Something get(something): Option<u32>;
-        ParkingLots: map (T::AccountId) => Option<ParkingLot>;
-        Tickets: map (T::AccountId) => Option<ParkingInfo<T>>;
+
+        // parking lot info
+        OwnerParkingLotsCount get(owner_parking_lots_count): map T::AccountId => u64;
+        OwnerParkingLotsArray get(owner_parking_lots_array): map (T::AccountId, u64) => T::Hash;
+        ParkingLots get(parking_lots): map T::Hash => Option<ParkingLot<T>>;
+        AllParkingLotsCount get(all_parking_lots_count): u64;
+
+        // user choose a parking lot
+        UserParkingInfo get(user_parking_info): map T::AccountId => Option<ParkingInfo<T>>;
+        ParkingInfos get(parking_infos): map T::Hash => Option<ParkingInfo<T>>;
     }
 }
 
@@ -70,37 +103,94 @@ decl_module! {
             Ok(())
         }
 
-        pub fn new_parking_log(origin, capacity: u32, min_price: u32, max_price: u32) -> Result {
-            let who = ensure_signed(origin)?;
+        pub fn new_parking_lot(origin, name: Vec<u8>, capacity: u32, min_price: T::Balance, max_price: T::Balance) -> Result {
+            let owner = ensure_signed(origin)?;
+            ensure!(name.len() < 100, "Parking Lot name cannot be more than 100 bytes");
+            let parking: ParkingLot<T> = ParkingLot {
+                name,
+                owner: owner.clone(),
+                capacity,
+                min_price,
+                max_price,
+                remain: capacity,
+            };
+
+            let count = Self::owner_parking_lots_count(owner.clone());
+            let all = Self::all_parking_lots_count();
+
+            let parking_lot_hash = (<system::Module<T>>::random_seed(), &owner, count, all)
+                .using_encoded(<T as system::Trait>::Hashing::hash);
+
+            <ParkingLots<T>>::insert(parking_lot_hash, parking);
+            <OwnerParkingLotsArray<T>>::insert((owner.clone(), count), parking_lot_hash);
+            <OwnerParkingLotsCount<T>>::insert(&owner, count+1);
+            AllParkingLotsCount::put(all+1);
             Ok(())
         }
 
-        pub fn parking_fee(origin, parking_lot: T::AccountId) -> Result {
-            let who = ensure_signed(origin)?;
+        pub fn transfer_parking_fee(origin, parking_lot_hash: T::Hash) -> Result {
+            let user = ensure_signed(origin)?;
+
+            let parking_lot = Self::parking_lots(parking_lot_hash).ok_or("The parking lot has not existed")?;
+            // TODO: set a price
+            let price = parking_lot.min_price;
+            let owner = parking_lot.owner;
+
+            <balances::Module<T> as Currency<_>>::transfer(&user, &owner, price)?;
+
             Ok(())
         }
 
-        pub fn entering(origin, parking_lot: T::AccountId) -> Result {
-            let who = ensure_signed(origin)?;
+        pub fn entering(origin, parking_lot_hash: T::Hash) -> Result {
+            let user = ensure_signed(origin)?;
+            ensure!(!<UserParkingInfo<T>>::exists(user.clone()), "User already has entered a parking lot");
+
+            let info_hash = <system::Module<T>>::random_seed();
+            let parking_info = ParkingInfo::<T>::new(user.clone(), parking_lot_hash, info_hash);
+            let mut parking_lot = Self::parking_lots(parking_lot_hash).ok_or("The parking lot has not existed")?;
+            if parking_lot.remain <= 0 {
+                return Err("The parking lot has no more position");
+            }
+
+            parking_lot.remain -= 1;
+            <ParkingLots<T>>::insert(parking_lot_hash, parking_lot);
+            <UserParkingInfo<T>>::insert(user.clone(), parking_info.clone());
+
+
+            Self::deposit_event(RawEvent::Entering(parking_info));
             Ok(())
         }
 
         pub fn leaving(origin) -> Result {
-            let who = ensure_signed(origin)?;
+            let user = ensure_signed(origin)?;
+            let parking_info = Self::user_parking_info(user.clone()).ok_or("User has not entered a parking lot")?;
+            let parking_lot_hash = parking_info.parking_lot_hash.clone();
+            let mut parking_lot = Self::parking_lots(parking_lot_hash).ok_or("The parking lot has not existed")?;
+
+            parking_lot.remain += 1;
+            <ParkingLots<T>>::insert(parking_lot_hash, parking_lot.clone());
+            <UserParkingInfo<T>>::remove(user);
+
+            Self::deposit_event(RawEvent::Leaving(parking_info));
             Ok(())
         }
     }
+}
+
+impl <T: Trait> Module<T> {
+
 }
 
 decl_event!(
     pub enum Event<T>
     where
         AccountId = <T as system::Trait>::AccountId,
+        EnteringInfo = ParkingInfo<T>,
+        LeavingInfo = ParkingInfo<T>,
     {
-        // Just a dummy event.
-        // Event `Something` is declared with a parameter of the type `u32` and `AccountId`
-        // To emit this event, we call the deposit funtion, from our runtime funtions
         SomethingStored(u32, AccountId),
+        Entering(EnteringInfo),
+        Leaving(LeavingInfo),
     }
 );
 
