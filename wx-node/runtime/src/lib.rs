@@ -255,6 +255,7 @@ impl sudo::Trait for Runtime {
 
 impl parking::Trait for Runtime {
     type Event = Event;
+    type Currency = Balances;
 }
 
 construct_runtime!(

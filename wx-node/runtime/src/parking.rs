@@ -15,12 +15,15 @@ use support::{
 };
 use system::ensure_signed;
 
+type BalanceOf<T> = <<T as Trait>::Currency as Currency<<T as system::Trait>::AccountId>>::Balance;
+
 /// The module's configuration trait.
-pub trait Trait: balances::Trait {
+pub trait Trait: system::Trait {
     // TODO: Add other types and constants required configure this module.
 
     /// The overarching event type.
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
+    type Currency: Currency<Self::AccountId>;
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
@@ -30,8 +33,8 @@ pub struct ParkingLot<T: Trait> {
     owner: T::AccountId,
     pub remain: u32,
     capacity: u32,
-    min_price: T::Balance,
-    max_price: T::Balance,
+    min_price: BalanceOf<T>,
+    max_price: BalanceOf<T>,
 }
 
 impl<T: Trait> ParkingLot<T> {
@@ -106,7 +109,7 @@ decl_module! {
             Ok(())
         }
 
-        pub fn new_parking_lot(origin, name: Vec<u8>, capacity: u32, min_price: T::Balance, max_price: T::Balance) -> Result {
+        pub fn new_parking_lot(origin, name: Vec<u8>, capacity: u32, min_price: BalanceOf<T>, max_price: BalanceOf<T>) -> Result {
             let owner = ensure_signed(origin)?;
             ensure!(name.len() < 100, "Parking Lot name cannot be more than 100 bytes");
             let parking: ParkingLot<T> = ParkingLot {
@@ -139,7 +142,7 @@ decl_module! {
             let price = parking_lot.min_price;
             let owner = parking_lot.owner;
 
-            <balances::Module<T> as Currency<_>>::transfer(&user, &owner, price)?;
+            T::Currency::transfer(&user, &owner, price)?;
 
             Ok(())
         }
@@ -245,6 +248,7 @@ mod tests {
     }
     impl Trait for Test {
         type Event = ();
+        type Currency = balances::Module<Test>;
     }
     type Parking = Module<Test>;
 
