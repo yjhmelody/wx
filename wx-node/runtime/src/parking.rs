@@ -1,26 +1,21 @@
 use codec::{Decode, Encode};
-use rstd::{prelude::*, result};
-use sr_primitives::traits::Hash;
+use rstd::{prelude::*, result, convert::TryInto};
+// sr_primitives include so many stds
+use sr_primitives::traits::{Hash, CheckedMul};
 /// A runtime module template with necessary imports
 
-/// Feel free to remove or edit this file as needed.
-/// If you change the name of this file, make sure to update its references in runtime/src/lib.rs
-/// If you remove this file, you can remove those references
-
-/// For more guidance on Substrate modules, see the example module
-/// https://github.com/paritytech/substrate/blob/master/srml/example/src/lib.rs
 use support::{
     decl_event, decl_module, decl_storage, dispatch::Result, ensure, traits::Currency, StorageMap,
     StorageValue,
 };
+
 use system::ensure_signed;
+
 
 type BalanceOf<T> = <<T as Trait>::Currency as Currency<<T as system::Trait>::AccountId>>::Balance;
 
 /// The module's configuration trait.
-pub trait Trait: system::Trait {
-    // TODO: Add other types and constants required configure this module.
-
+pub trait Trait: timestamp::Trait {
     /// The overarching event type.
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
     type Currency: Currency<Self::AccountId>;
@@ -31,17 +26,33 @@ pub trait Trait: system::Trait {
 pub struct ParkingLot<T: Trait> {
     name: Vec<u8>,
     owner: T::AccountId,
-    pub remain: u32,
+    remain: u32,
     capacity: u32,
     min_price: BalanceOf<T>,
     max_price: BalanceOf<T>,
+    latitude: i32,
+    longitude: i32,
 }
 
+pub const HOUR: u64 = 3600;
+
 impl<T: Trait> ParkingLot<T> {
-    pub fn fee(&self, _cur_time: u64) -> u64 {
-        unimplemented!()
+    // TODO: refactor fee model
+    pub fn fee(&self, enter_time: T::Moment, exit_time: T::Moment) -> result::Result<BalanceOf<T>, &'static str> {
+        let diff = (exit_time - enter_time) / to_moment::<T>(HOUR)?;
+        let diff: u32 = TryInto::<u32>::try_into(diff).map_err(|_| "Time diff overflow")?;
+        self.min_price.checked_mul(&BalanceOf::<T>::from(diff)).ok_or("Fee overflow")
     }
 }
+
+fn to_balance<T: Trait>(val: u128) -> result::Result<BalanceOf<T>, &'static str > {
+            val.try_into().map_err(|_| "Convert to Balance type overflow")
+        }
+
+fn to_moment<T: Trait>(val: u64) -> result::Result<T::Moment, &'static str > {
+    val.try_into().map_err(|_| "Convert to Moment type overflow")
+}
+
 
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Encode, Decode, Default, Clone, PartialEq, Eq)]
@@ -49,17 +60,20 @@ pub struct ParkingInfo<T: Trait> {
     user_id: T::AccountId,
     parking_lot_hash: T::Hash,
     info_hash: T::Hash,
+    enter_time: T::Moment,
 }
 
 impl<T: Trait> ParkingInfo<T> {
-    pub fn new(user_id: T::AccountId, parking_lot_hash: T::Hash, info_hash: T::Hash) -> Self {
+    pub fn new(user_id: T::AccountId, parking_lot_hash: T::Hash, info_hash: T::Hash, enter_time: T::Moment) -> Self {
         Self {
             user_id,
             parking_lot_hash,
             info_hash,
+            enter_time,
         }
     }
 }
+
 
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Encode, Decode, Default)]
@@ -67,6 +81,23 @@ pub struct ParkingOwnerInfo<T: Trait> {
     id: T::AccountId,
     parking_lot_count: u32,
 }
+
+
+// TODO: Design the interface
+decl_event!(
+    pub enum Event<T>
+    where
+        AccountId = <T as system::Trait>::AccountId,
+        // EnteringInfo = ParkingInfo<T>,
+        // LeavingInfo = ParkingInfo<T>,
+    {
+        SomethingStored(u32, AccountId),
+        // Entering(EnteringInfo),
+        // Leaving(LeavingInfo),
+        // TransferFee(AccountId, AccountId),
+    }
+);
+
 
 // This module's storage items.
 decl_storage! {
@@ -82,6 +113,8 @@ decl_storage! {
         // user choose a parking lot
         UserParkingInfo get(user_parking_info): map T::AccountId => Option<ParkingInfo<T>>;
         ParkingInfos get(parking_infos): map T::Hash => Option<ParkingInfo<T>>;
+
+        // TODO: 增加所有用户当前费用的状态
     }
 }
 
@@ -109,7 +142,8 @@ decl_module! {
             Ok(())
         }
 
-        pub fn new_parking_lot(origin, name: Vec<u8>, capacity: u32, min_price: BalanceOf<T>, max_price: BalanceOf<T>) -> Result {
+        /// 经纬度需要前端把浮点数转为整数，这里只负责存储，不负责解析
+        pub fn new_parking_lot(origin, name: Vec<u8>, latitude: i32, longitude: i32, capacity: u32, min_price: BalanceOf<T>, max_price: BalanceOf<T>) -> Result {
             let owner = ensure_signed(origin)?;
             ensure!(name.len() < 100, "Parking Lot name cannot be more than 100 bytes");
             let parking: ParkingLot<T> = ParkingLot {
@@ -119,6 +153,8 @@ decl_module! {
                 min_price,
                 max_price,
                 remain: capacity,
+                latitude,
+                longitude,
             };
 
             let count = Self::owner_parking_lots_count(owner.clone());
@@ -134,25 +170,35 @@ decl_module! {
             Ok(())
         }
 
+        /// 交停车费，在leaving之前调用
+        // TODO: 跟leaving合并
         pub fn transfer_parking_fee(origin, parking_lot_hash: T::Hash) -> Result {
             let user = ensure_signed(origin)?;
 
             let parking_lot = Self::parking_lots(parking_lot_hash).ok_or("The parking lot has not existed")?;
+            let parking_info = Self::user_parking_info(user.clone()).ok_or("User must be in the parking lot")?;
+            ensure!(parking_info.user_id == user, "User must be in the parking lot");
+
             // TODO: set a price
-            let price = parking_lot.min_price;
-            let owner = parking_lot.owner;
+            let owner = parking_lot.owner.clone();
+            let now = <timestamp::Module<T>>::get();
+            let fee = parking_lot.fee(parking_info.enter_time, now)?;
 
-            T::Currency::transfer(&user, &owner, price)?;
+            T::Currency::transfer(&user, &owner, fee)?;
 
+            // Self::deposit_event(RawEvent::TransferFee());
             Ok(())
         }
 
+        /// 用户车入库
         pub fn entering(origin, parking_lot_hash: T::Hash) -> Result {
             let user = ensure_signed(origin)?;
             ensure!(!<UserParkingInfo<T>>::exists(user.clone()), "User already has entered a parking lot");
 
             let info_hash = <system::Module<T>>::random_seed();
-            let parking_info = ParkingInfo::<T>::new(user.clone(), parking_lot_hash, info_hash);
+            // record the entering time
+            let now = <timestamp::Module<T>>::get();
+            let parking_info = ParkingInfo::<T>::new(user.clone(), parking_lot_hash, info_hash, now);
             let mut parking_lot = Self::parking_lots(parking_lot_hash).ok_or("The parking lot has not existed")?;
             if parking_lot.remain <= 0 {
                 return Err("The parking lot has no more position");
@@ -162,11 +208,11 @@ decl_module! {
             <ParkingLots<T>>::insert(parking_lot_hash, parking_lot);
             <UserParkingInfo<T>>::insert(user.clone(), parking_info.clone());
 
-
-            Self::deposit_event(RawEvent::Entering(parking_info));
+            // Self::deposit_event(RawEvent::Entering(parking_info));
             Ok(())
         }
 
+        /// 用户车出库
         pub fn leaving(origin) -> Result {
             let user = ensure_signed(origin)?;
             let parking_info = Self::user_parking_info(user.clone()).ok_or("User has not entered a parking lot")?;
@@ -177,26 +223,17 @@ decl_module! {
             <ParkingLots<T>>::insert(parking_lot_hash, parking_lot.clone());
             <UserParkingInfo<T>>::remove(user);
 
-            Self::deposit_event(RawEvent::Leaving(parking_info));
+            // Self::deposit_event(RawEvent::Leaving(parking_info));
             Ok(())
         }
     }
 }
 
-impl<T: Trait> Module<T> {}
 
-decl_event!(
-    pub enum Event<T>
-    where
-        AccountId = <T as system::Trait>::AccountId,
-        EnteringInfo = ParkingInfo<T>,
-        LeavingInfo = ParkingInfo<T>,
-    {
-        SomethingStored(u32, AccountId),
-        Entering(EnteringInfo),
-        Leaving(LeavingInfo),
-    }
-);
+impl<T: Trait> Module<T> {
+
+}
+
 
 /// tests for this module
 #[cfg(test)]
@@ -246,6 +283,8 @@ mod tests {
         type AvailableBlockRatio = AvailableBlockRatio;
         type Version = ();
     }
+
+
     impl Trait for Test {
         type Event = ();
         type Currency = balances::Module<Test>;
