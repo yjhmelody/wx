@@ -48,13 +48,13 @@ impl<T: Trait> ParkingLot<T> {
 
     pub fn compute_new_fee(&self, current_time: T::Moment, exit_time: T::Moment) -> result::Result<BalanceOf<T>, &'static str> {
         let current_num = self.capacity.checked_sub(self.remain.clone()).ok_or("Remained num greater than capacity")?;
-        let diff_time = current_time.checked_sub(exit_time).ok_or("current time must greater than exiting time")?;
+        let diff_time = current_time.checked_sub(&exit_time).ok_or("current time must greater than exiting time")?;
         let diff_time: u32 = TryInto::<u32>::try_into(diff_time).map_err(|_| "Time diff overflow")?;
-        let diff_price = self.max_price.checked_sub(self.min_price).ok_or("Max price must be greater than min price")?;
+        let diff_price = self.max_price.checked_sub(&self.min_price).ok_or("Max price must be greater than min price")?;
         let diff_price: u32 = TryInto::<u32>::try_into(diff_price).map_err(|_| "Price diff overflow")?;
-        Ok(
-            diff_time * (current_num / self.capacity * diff_price + self.min_price)
-        )
+        let min_price: u32 = TryInto::<u32>::try_into(self.min_price).map_err(|_| "Min price overflow")?;
+        let res = diff_time * (current_num / self.capacity * diff_price + min_price);
+        Ok(res.into())
     }
 }
 
@@ -135,7 +135,7 @@ decl_storage! {
         /// current parking info of users
         UserParkingInfo get(user_parking_info): map T::AccountId => Option<ParkingInfo<T>>;
         /// All parking infos
-        // ParkingInfos get(parking_infos): map T::Hash => Option<ParkingInfo<T>>;
+        ParkingInfos get(parking_infos): map T::Hash => Option<ParkingInfo<T>>;
     }
 }
 
@@ -222,7 +222,7 @@ decl_module! {
                 return Err("The parking lot has no more position");
             }
 
-            let mut accs = Self::current_parking_accounts::<T>();
+            let mut accs = Self::current_parking_accounts(parking_lot_hash.clone());
             accs.push(user.clone());
             parking_lot.remain -= 1;
 
@@ -241,7 +241,7 @@ decl_module! {
             let parking_info = Self::user_parking_info(user.clone()).ok_or("User has not entered a parking lot")?;
             let parking_lot_hash = parking_info.parking_lot_hash.clone();
             let mut parking_lot = Self::parking_lots(parking_lot_hash).ok_or("The parking lot has not existed")?;
-            let accs: Vec<_> = Self::current_parking_accounts::<T>();
+            let accs: Vec<_> = Self::current_parking_accounts(parking_lot_hash.clone());
 
             // update fees first, and then pay the fee and remove parking info
             Self::pay_parking_fee(user.clone(), &parking_lot)?;
