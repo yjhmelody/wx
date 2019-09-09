@@ -74,7 +74,7 @@ decl_event!(
 {
   "ParkingLot": {
     "name": "Vec<u8>",
-    "owner": "AccocuntId",
+    "owner": "AccountId",
     "remain": "u32",
     "capacity": "u32",
     "min_price": "Balance",
