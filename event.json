@@ -1,0 +1,25 @@
+{
+    "ParkingLot": {
+        "name": "Vec<u8>",
+        "owner": "AccocuntId",
+        "remain": "u32",
+        "capacity": "u32",
+        "min_price": "Balance",
+        "max_price": "Balance",
+        "latitude": "i32",
+        "longitude": "i32"
+    },
+    "ParkingLotInfo": "ParkingLot",
+
+    "ParkingInfo": {
+        "user_id": "AccountId",
+        "parking_lot_hash": "H256",
+        "info_hash": "H256",
+        "enter_time": "Moment",
+        "current_time": "Moment",
+        "current_fee": "Balance"
+    },
+
+    "EnteringInfo": "ParkingInfo",
+    "LeavingInfo": "ParkingInfo"
+}

@@ -21,7 +21,7 @@ pub trait Trait: timestamp::Trait {
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
-#[derive(Encode, Decode, Default, Clone, PartialEq)]
+#[derive(Encode, Decode, Default, Clone, PartialEq, Eq)]
 pub struct ParkingLot<T: Trait> {
     pub name: Vec<u8>,
     pub owner: T::AccountId,
@@ -98,21 +98,22 @@ pub struct ParkingOwnerInfo<T: Trait> {
 }
 
 
-// TODO: Design the interface
+// TODO: Refactor
 decl_event!(
     pub enum Event<T>
     where
         AccountId = <T as system::Trait>::AccountId,
         Moment = <T as timestamp::Trait>::Moment,
-        // EnteringInfo = ParkingInfo<T>,
-        // LeavingInfo = ParkingInfo<T>,
+        EnteringInfo = ParkingInfo<T>,
+        LeavingInfo = ParkingInfo<T>,
+        ParkingLotInfo = ParkingLot<T>,
     {
         /// Deposit a new parking lot
-        // NewParkingLot(Moment, ParkingLot),
+        NewParkingLot(Moment, ParkingLotInfo),
         /// Deposit a event that current user enter the parking lot
-        // Entering(Moment, EnteringInfo),
+        Entering(Moment, EnteringInfo),
         /// Deposit a event that current user leave the parkint lot
-        // Leaving(Moment, AccountId, AccountId, LeavingInfo),
+        Leaving(Moment, AccountId, AccountId, LeavingInfo),
         
         SomethingStored(u32, AccountId, Moment),
     }
@@ -157,7 +158,7 @@ decl_module! {
             Ok(())
         }
 
-        /// 经纬度需要前端把浮点数转为整数，这里只负责存储，不负责解析
+        /// Create a new parking lot
         pub fn new_parking_lot(origin, name: Vec<u8>, latitude: i32, longitude: i32, capacity: u32, min_price: BalanceOf<T>, max_price: BalanceOf<T>) -> Result {
             let owner = ensure_signed(origin)?;
             ensure!(name.len() < 100, "Parking Lot name cannot be more than 100 bytes");
@@ -186,8 +187,7 @@ decl_module! {
             Ok(())
         }
 
-        /// 交停车费，在leaving之前调用
-        // TODO: 跟leaving合并
+        /// transfer parking fee when leaving
         pub fn transfer_parking_fee(origin, parking_lot_hash: T::Hash) -> Result {
             let user = ensure_signed(origin)?;
 
@@ -205,7 +205,7 @@ decl_module! {
             Ok(())
         }
 
-        /// 用户车入库
+        /// User entering
         pub fn entering(origin, parking_lot_hash: T::Hash) -> Result {
             let user = ensure_signed(origin)?;
             ensure!(!<UserParkingInfo<T>>::exists(user.clone()), "User already has entered a parking lot");
@@ -232,7 +232,7 @@ decl_module! {
             Ok(())
         }
 
-        /// 用户车出库
+        /// User leaving
         pub fn leaving(origin) -> Result {
             let user = ensure_signed(origin)?;
             let parking_info = Self::user_parking_info(user.clone()).ok_or("User has not entered a parking lot")?;
