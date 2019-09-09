@@ -1,7 +1,7 @@
 use codec::{Decode, Encode};
 use rstd::{prelude::*, result, convert::TryInto};
 // sr_primitives include so many stds
-use sr_primitives::traits::{Hash, CheckedMul};
+use sr_primitives::traits::{Hash, CheckedMul, CheckedSub};
 /// A runtime module template with necessary imports
 
 use support::{
@@ -36,12 +36,25 @@ pub struct ParkingLot<T: Trait> {
 
 pub const HOUR: u64 = 3600;
 
+
+
 impl<T: Trait> ParkingLot<T> {
     // TODO: refactor fee model
     pub fn fee(&self, enter_time: T::Moment, exit_time: T::Moment) -> result::Result<BalanceOf<T>, &'static str> {
         let diff = (exit_time - enter_time) / to_moment::<T>(HOUR)?;
         let diff: u32 = TryInto::<u32>::try_into(diff).map_err(|_| "Time diff overflow")?;
         self.min_price.checked_mul(&BalanceOf::<T>::from(diff)).ok_or("Fee overflow")
+    }
+
+    pub fn compute_new_fee(&self, current_time: T::Moment, exit_time: T::Moment) -> result::Result<BalanceOf<T>, &'static str> {
+        let current_num = self.capacity.checked_sub(self.remain.clone()).ok_or("Remained num greater than capacity")?;
+        let diff_time = current_time.checked_sub(exit_time).ok_or("current time must greater than exiting time")?;
+        let diff_time: u32 = TryInto::<u32>::try_into(diff_time).map_err(|_| "Time diff overflow")?;
+        let diff_price = self.max_price.checked_sub(self.min_price).ok_or("Max price must be greater than min price")?;
+        let diff_price: u32 = TryInto::<u32>::try_into(diff_price).map_err(|_| "Price diff overflow")?;
+        Ok(
+            diff_time * (current_num / self.capacity * diff_price + self.min_price)
+        )
     }
 }
 
@@ -57,10 +70,12 @@ fn to_moment<T: Trait>(val: u64) -> result::Result<T::Moment, &'static str > {
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Encode, Decode, Default, Clone, PartialEq, Eq)]
 pub struct ParkingInfo<T: Trait> {
-    user_id: T::AccountId,
-    parking_lot_hash: T::Hash,
-    info_hash: T::Hash,
-    enter_time: T::Moment,
+    pub user_id: T::AccountId,
+    pub parking_lot_hash: T::Hash,
+    pub info_hash: T::Hash,
+    pub enter_time: T::Moment,
+    pub current_time: T::Moment,
+    pub current_fee: BalanceOf<T>,
 }
 
 impl<T: Trait> ParkingInfo<T> {
@@ -70,6 +85,8 @@ impl<T: Trait> ParkingInfo<T> {
             parking_lot_hash,
             info_hash,
             enter_time,
+            current_time: enter_time.clone(),
+            current_fee: 0.into(),
         }
     }
 }
@@ -78,8 +95,8 @@ impl<T: Trait> ParkingInfo<T> {
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Encode, Decode, Default)]
 pub struct ParkingOwnerInfo<T: Trait> {
-    id: T::AccountId,
-    parking_lot_count: u32,
+    pub id: T::AccountId,
+    pub parking_lot_count: u32,
 }
 
 
@@ -88,10 +105,11 @@ decl_event!(
     pub enum Event<T>
     where
         AccountId = <T as system::Trait>::AccountId,
+        Moment = <T as timestamp::Trait>::Moment,
         // EnteringInfo = ParkingInfo<T>,
         // LeavingInfo = ParkingInfo<T>,
     {
-        SomethingStored(u32, AccountId),
+        SomethingStored(u32, AccountId, Moment),
         // Entering(EnteringInfo),
         // Leaving(LeavingInfo),
         // TransferFee(AccountId, AccountId),
@@ -103,18 +121,21 @@ decl_event!(
 decl_storage! {
     trait Store for Module<T: Trait> as Parking {
         Something get(something): Option<u32>;
-
-        // parking lot info
+        /// Current parking lot count of a owner
         OwnerParkingLotsCount get(owner_parking_lots_count): map T::AccountId => u64;
+        /// Access the all parking lot infos
         OwnerParkingLotsArray get(owner_parking_lots_array): map (T::AccountId, u64) => T::Hash;
+        /// Hash map to one parking lot
         ParkingLots get(parking_lots): map T::Hash => Option<ParkingLot<T>>;
+        /// All user id of current parking lot
+        CurrentParkingAccounts get(current_parking_accounts): map T::Hash => Vec<T::AccountId>;
+
+        /// All parking lots' number
         AllParkingLotsCount get(all_parking_lots_count): u64;
-
-        // user choose a parking lot
+        /// current parking info of users
         UserParkingInfo get(user_parking_info): map T::AccountId => Option<ParkingInfo<T>>;
-        ParkingInfos get(parking_infos): map T::Hash => Option<ParkingInfo<T>>;
-
-        // TODO: 增加所有用户当前费用的状态
+        /// All parking infos
+        // ParkingInfos get(parking_infos): map T::Hash => Option<ParkingInfo<T>>;
     }
 }
 
@@ -130,15 +151,11 @@ decl_module! {
         // function that can be called by the external world as an extrinsics call
         // takes a parameter of the type `AccountId`, stores it and emits an event
         pub fn do_something(origin, something: u32) -> Result {
-            // TODO: You only need this if you want to check it was signed.
             let who = ensure_signed(origin)?;
-
-            // TODO: Code to execute when something calls this.
             // For example: the following line stores the passed in u32 in the storage
             Something::put(something);
-
-            // here we are raising the Something event
-            Self::deposit_event(RawEvent::SomethingStored(something, who));
+            // here we are raising the Som  ething event
+            Self::deposit_event(RawEvent::SomethingStored(something, who, <timestamp::Module<T>>::get()));
             Ok(())
         }
 
@@ -163,10 +180,12 @@ decl_module! {
             let parking_lot_hash = (<system::Module<T>>::random_seed(), &owner, count, all)
                 .using_encoded(<T as system::Trait>::Hashing::hash);
 
+
             <ParkingLots<T>>::insert(parking_lot_hash, parking);
             <OwnerParkingLotsArray<T>>::insert((owner.clone(), count), parking_lot_hash);
             <OwnerParkingLotsCount<T>>::insert(&owner, count+1);
             AllParkingLotsCount::put(all+1);
+
             Ok(())
         }
 
@@ -179,7 +198,6 @@ decl_module! {
             let parking_info = Self::user_parking_info(user.clone()).ok_or("User must be in the parking lot")?;
             ensure!(parking_info.user_id == user, "User must be in the parking lot");
 
-            // TODO: set a price
             let owner = parking_lot.owner.clone();
             let now = <timestamp::Module<T>>::get();
             let fee = parking_lot.fee(parking_info.enter_time, now)?;
@@ -204,7 +222,12 @@ decl_module! {
                 return Err("The parking lot has no more position");
             }
 
+            let mut accs = Self::current_parking_accounts::<T>();
+            accs.push(user.clone());
             parking_lot.remain -= 1;
+
+
+            <CurrentParkingAccounts<T>>::insert(parking_lot_hash.clone(), accs);
             <ParkingLots<T>>::insert(parking_lot_hash, parking_lot);
             <UserParkingInfo<T>>::insert(user.clone(), parking_info.clone());
 
@@ -218,8 +241,20 @@ decl_module! {
             let parking_info = Self::user_parking_info(user.clone()).ok_or("User has not entered a parking lot")?;
             let parking_lot_hash = parking_info.parking_lot_hash.clone();
             let mut parking_lot = Self::parking_lots(parking_lot_hash).ok_or("The parking lot has not existed")?;
+            let accs: Vec<_> = Self::current_parking_accounts::<T>();
 
+            // update fees first, and then pay the fee and remove parking info
+            Self::pay_parking_fee(user.clone(), &parking_lot)?;
             parking_lot.remain += 1;
+            let mut new_accs = vec![];
+            for acc in accs {
+                if acc != user {
+                    new_accs.push(acc);
+                }
+            }
+
+
+            <CurrentParkingAccounts<T>>::insert(parking_lot_hash.clone(), new_accs);
             <ParkingLots<T>>::insert(parking_lot_hash, parking_lot.clone());
             <UserParkingInfo<T>>::remove(user);
 
@@ -231,7 +266,22 @@ decl_module! {
 
 
 impl<T: Trait> Module<T> {
+        fn pay_parking_fee(user: T::AccountId, parking_lot: &ParkingLot<T>) -> Result {
+            let parking_info = Self::user_parking_info(user.clone()).ok_or("User must be in the parking lot")?;
+            ensure!(parking_info.user_id == user, "User must be in the parking lot");
 
+            let owner = parking_lot.owner.clone();
+            let now = <timestamp::Module<T>>::get();
+            let fee = parking_lot.fee(parking_info.enter_time, now)?;
+
+            T::Currency::transfer(&user, &owner, fee)
+        }
+
+        /// Recompute all parking info for current parking lot
+        fn recompute_all_fee(parking_lot: &ParkingLot<T>, current_time: T::Moment, exit_time: T::Moment) -> Result {
+            let new_fee = parking_lot.compute_new_fee(current_time, exit_time)?;
+            unimplemented!()
+        }
 }
 
 
