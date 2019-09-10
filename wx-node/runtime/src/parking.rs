@@ -139,13 +139,14 @@ decl_storage! {
     }
     
 	add_extra_genesis {
-		config(parking_lots): Vec<ParkingLot<T>>;
+        // TODO
+		config(parking_lots): Vec<T::AccountId>;
 
         build(|config: &GenesisConfig<T>| {
-            for parking_lot in config.parking_lots.iter() {
-                let account = parking_lot.owner.clone();
-                <Module<T>>::_new_parking_lot(account, parking_lot.clone()).expect("Cannot be failed");
-            }
+            // for parking_lot in config.parking_lots.iter() {
+            //     let account = parking_lot.owner.clone();
+            //     <Module<T>>::_new_parking_lot(account, parking_lot.clone()).expect("Cannot be failed");
+            // }
         })
 	}
 }
@@ -390,41 +391,37 @@ mod tests {
 
     // This function basically just builds a genesis storage key/value store according to
     // our desired mockup.
+    // TODO
     fn new_test_ext() -> TestExternalities<Blake2Hasher> {
-        let t = system::GenesisConfig::default()
-            .build_storage::<Test>()
-            .unwrap()
-            .0;
-        
-        t.extend(balances::GenesisConfig::<Test>::default().build_storage().unwrap().0);
-        
-        t.extend(GenesisConfig::<Test>{
-            parking_lots: vec![
-                ParkingLot {
-                    name: b"test1",
-                    owner: 0,
-                    capacity: 10,
-                    min_price: 10,
-                    max_price: 100,
-                    remain: 10,
-                    latitude: 60,
-                    longitude: 60,
-                },
-
-                ParkingLot {
-                    name: b"test2",
-                    owner: 1,
-                    capacity: 100,
-                    min_price: 1,
-                    max_price: 1000,
-                    remain: 100,
-                    latitude: 61,
-                    longitude: 61,
-                }
-            ],
-        }.build_storage().unwrap().0);
-
+        let mut t = system::GenesisConfig::default().build_storage::<Test>().unwrap();
         t.into()
+        
+        // t.extend(GenesisConfig::<Test> {
+        //     parking_lots: vec![
+        //         ParkingLot {
+        //             name: b"test1".to_vec(),
+        //             owner: 0,
+        //             capacity: 10,
+        //             min_price: 10,
+        //             max_price: 100,
+        //             remain: 10,
+        //             latitude: 60,
+        //             longitude: 60,
+        //         },
+
+        //         ParkingLot {
+        //             name: b"test2".to_vec(),
+        //             owner: 1,
+        //             capacity: 100,
+        //             min_price: 1,
+        //             max_price: 1000,
+        //             remain: 100,
+        //             latitude: 61,
+        //             longitude: 61,
+        //         }
+        //     ],
+        // }.build_storage().unwrap().0);
+
     }
 
     #[test]
