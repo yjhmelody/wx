@@ -179,29 +179,12 @@ decl_module! {
             let parking_lot_hash = (<system::Module<T>>::random_seed(), &owner, count, all)
                 .using_encoded(<T as system::Trait>::Hashing::hash);
 
-            <ParkingLots<T>>::insert(parking_lot_hash, parking);
+            <ParkingLots<T>>::insert(parking_lot_hash, parking.clone());
             <OwnerParkingLotsArray<T>>::insert((owner.clone(), count), parking_lot_hash);
             <OwnerParkingLotsCount<T>>::insert(&owner, count+1);
             AllParkingLotsCount::put(all+1);
 
-            Ok(())
-        }
-
-        /// transfer parking fee when leaving
-        pub fn transfer_parking_fee(origin, parking_lot_hash: T::Hash) -> Result {
-            let user = ensure_signed(origin)?;
-
-            let parking_lot = Self::parking_lots(parking_lot_hash).ok_or("The parking lot has not existed")?;
-            let parking_info = Self::user_parking_info(user.clone()).ok_or("User must be in the parking lot")?;
-            ensure!(parking_info.user_id == user, "User must be in the parking lot");
-
-            let owner = parking_lot.owner.clone();
-            let now = <timestamp::Module<T>>::get();
-            let fee = parking_lot.fee(parking_info.enter_time, now)?;
-
-            T::Currency::transfer(&user, &owner, fee)?;
-
-            // Self::deposit_event(RawEvent::TransferFee());
+            Self::deposit_event(RawEvent::NewParkingLot(<timestamp::Module<T>>::get(), parking));
             Ok(())
         }
 
@@ -228,7 +211,7 @@ decl_module! {
             <ParkingLots<T>>::insert(parking_lot_hash, parking_lot);
             <UserParkingInfo<T>>::insert(user.clone(), parking_info.clone());
 
-            // Self::deposit_event(RawEvent::Entering(parking_info));
+            Self::deposit_event(RawEvent::Entering(<timestamp::Module<T>>::get(), parking_info));
             Ok(())
         }
 
@@ -238,6 +221,7 @@ decl_module! {
             let parking_info = Self::user_parking_info(user.clone()).ok_or("User has not entered a parking lot")?;
             let parking_lot_hash = parking_info.parking_lot_hash.clone();
             let mut parking_lot = Self::parking_lots(parking_lot_hash).ok_or("The parking lot has not existed")?;
+            let owner = parking_lot.owner.clone();
             let accs: Vec<_> = Self::current_parking_accounts(parking_lot_hash.clone());
             let mut new_accs = vec![];
             for acc in accs {
@@ -247,15 +231,15 @@ decl_module! {
             }
 
             // update fees first, and then pay the fee and remove parking info
+            // change states
             Self::pay_parking_fee(user.clone(), &parking_lot)?;
             parking_lot.remain += 1;
 
-            // change states
             <CurrentParkingAccounts<T>>::insert(parking_lot_hash.clone(), new_accs);
             <ParkingLots<T>>::insert(parking_lot_hash, parking_lot.clone());
-            <UserParkingInfo<T>>::remove(user);
+            <UserParkingInfo<T>>::remove(user.clone());
 
-            // Self::deposit_event(RawEvent::Leaving(parking_info));
+            Self::deposit_event(RawEvent::Leaving(<timestamp::Module<T>>::get(), user, owner, parking_info));
             Ok(())
         }
     }
@@ -303,7 +287,7 @@ mod tests {
     use super::*;
 
     use primitives::{Blake2Hasher, H256};
-    use runtime_io::with_externalities;
+    use runtime_io::{with_externalities, TestExternalities};
     use sr_primitives::weights::Weight;
     use sr_primitives::Perbill;
     use sr_primitives::{
@@ -311,6 +295,7 @@ mod tests {
         traits::{BlakeTwo256, IdentityLookup},
     };
     use support::{assert_ok, impl_outer_origin, parameter_types};
+
 
     impl_outer_origin! {
         pub enum Origin for Test {}
@@ -346,16 +331,50 @@ mod tests {
         type Version = ();
     }
 
+	parameter_types! {
+		pub const ExistentialDeposit: u64 = 0;
+		pub const TransferFee: u64 = 0;
+		pub const CreationFee: u64 = 0;
+		pub const TransactionBaseFee: u64 = 0;
+		pub const TransactionByteFee: u64 = 0;
+	}
+
+    impl balances::Trait for Test {
+        type Balance = u64;
+		type OnFreeBalanceZero = ();
+		type OnNewAccount = ();
+		type Event = ();
+		type TransactionPayment = ();
+		type TransferPayment = ();
+		type DustRemoval = ();
+		type ExistentialDeposit = ExistentialDeposit;
+		type TransferFee = TransferFee;
+		type CreationFee = CreationFee;
+		type TransactionBaseFee = TransactionBaseFee;
+		type TransactionByteFee = TransactionByteFee;
+		type WeightToFee = ();
+    }
+
+    parameter_types! {
+        pub const MinimumPeriod: u64 = 1000;
+    }
+
+    impl timestamp::Trait for Test {
+        type Moment = u64;
+        type OnTimestampSet = ();
+        type MinimumPeriod = MinimumPeriod;
+    }
 
     impl Trait for Test {
         type Event = ();
         type Currency = balances::Module<Test>;
     }
+    
     type Parking = Module<Test>;
 
     // This function basically just builds a genesis storage key/value store according to
     // our desired mockup.
-    fn new_test_ext() -> runtime_io::TestExternalities<Blake2Hasher> {
+    fn new_test_ext() -> TestExternalities<Blake2Hasher> {
         system::GenesisConfig::default()
             .build_storage::<Test>()
             .unwrap()
@@ -371,5 +390,24 @@ mod tests {
             // asserting that the stored value is equal to what we stored
             assert_eq!(Parking::something(), Some(42));
         });
+    }
+
+    // TODO: unit test
+    fn test_new_parking_lot() {
+        with_externalities(&mut new_test_ext(), || {
+            assert!(true);
+        })
+    }
+
+    fn test_entering() {
+        with_externalities(& mut new_test_ext(), || {
+            assert!(true);
+        })
+    }
+
+    fn test_leaving() {
+        with_externalities(& mut new_test_ext(), || {
+            assert!(true);
+        })
     }
 }

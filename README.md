@@ -6,7 +6,7 @@
 
 - 车场主创建新的停车场(new_parking_lot)
 - 入库(entering)
-- 出库(leaving)
+- 出库并付费(leaving)
 - 设置地图来显示停车场，demo上面可以设置四个停车场。
 - 其他一些常用地图功能
 
