@@ -11,10 +11,13 @@ use substrate_client::LongestChain;
 use substrate_executor::native_executor_instance;
 pub use substrate_executor::NativeExecutor;
 use substrate_service::{
-    error::Error as ServiceError, AbstractService, Configuration, ServiceBuilder,
+    error::Error as ServiceError, AbstractService, Configuration,
+    ServiceBuilder,
 };
 use transaction_pool::{self, txpool::Pool as TransactionPool};
-use wx_node_runtime::{self, opaque::Block, GenesisConfig, RuntimeApi, WASM_BINARY};
+use wx_node_runtime::{
+    self, opaque::Block, GenesisConfig, RuntimeApi, WASM_BINARY,
+};
 
 // Our native executor instance.
 native_executor_instance!(
@@ -52,34 +55,43 @@ macro_rules! new_full_start {
                 transaction_pool::ChainApi::new(client),
             ))
         })?
-        .with_import_queue(|_config, client, mut select_chain, transaction_pool| {
-            let select_chain = select_chain
-                .take()
-                .ok_or_else(|| substrate_service::Error::SelectChainRequired)?;
-            let (block_import, link_half) =
-                grandpa::block_import::<_, _, _, wx_node_runtime::RuntimeApi, _, _>(
-                    client.clone(),
-                    client.clone(),
-                    select_chain,
-                )?;
-            let justification_import = block_import.clone();
+        .with_import_queue(
+            |_config, client, mut select_chain, transaction_pool| {
+                let select_chain = select_chain.take().ok_or_else(|| {
+                    substrate_service::Error::SelectChainRequired
+                })?;
+                let (block_import, link_half) =
+                    grandpa::block_import::<
+                        _,
+                        _,
+                        _,
+                        wx_node_runtime::RuntimeApi,
+                        _,
+                        _,
+                    >(
+                        client.clone(), client.clone(), select_chain
+                    )?;
+                let justification_import = block_import.clone();
 
-            let (import_queue, babe_link, babe_block_import, pruning_task) = babe::import_queue(
-                babe::Config::get_or_compute(&*client)?,
-                block_import,
-                Some(Box::new(justification_import)),
-                None,
-                client.clone(),
-                client,
-                inherent_data_providers.clone(),
-                Some(transaction_pool),
-            )?;
+                let (import_queue, babe_link, babe_block_import, pruning_task) =
+                    babe::import_queue(
+                        babe::Config::get_or_compute(&*client)?,
+                        block_import,
+                        Some(Box::new(justification_import)),
+                        None,
+                        client.clone(),
+                        client,
+                        inherent_data_providers.clone(),
+                        Some(transaction_pool),
+                    )?;
 
-            import_setup = Some((babe_block_import.clone(), link_half, babe_link));
-            tasks_to_spawn = Some(vec![Box::new(pruning_task)]);
+                import_setup =
+                    Some((babe_block_import.clone(), link_half, babe_link));
+                tasks_to_spawn = Some(vec![Box::new(pruning_task)]);
 
-            Ok(import_queue)
-        })?;
+                Ok(import_queue)
+            },
+        )?;
 
         (
             builder,
@@ -99,13 +111,18 @@ pub fn new_full<C: Send + Default + 'static>(
     let disable_grandpa = config.disable_grandpa;
     let force_authoring = config.force_authoring;
 
-    let (builder, mut import_setup, inherent_data_providers, mut tasks_to_spawn) =
-        new_full_start!(config);
+    let (
+        builder,
+        mut import_setup,
+        inherent_data_providers,
+        mut tasks_to_spawn,
+    ) = new_full_start!(config);
 
     let service = builder
         .with_network_protocol(|_| Ok(NodeProtocol::new()))?
         .with_finality_proof_provider(|client, backend| {
-            Ok(Arc::new(GrandpaFinalityProofProvider::new(backend, client)) as _)
+            Ok(Arc::new(GrandpaFinalityProofProvider::new(backend, client))
+                as _)
         })?
         .build()?;
 
@@ -116,7 +133,9 @@ pub fn new_full<C: Send + Default + 'static>(
     // spawn any futures that were created in the previous setup steps
     if let Some(tasks) = tasks_to_spawn.take() {
         for task in tasks {
-            service.spawn_task(task.select(service.on_exit()).map(|_| ()).map_err(|_| ()));
+            service.spawn_task(
+                task.select(service.on_exit()).map(|_| ()).map_err(|_| ()),
+            );
         }
     }
 
@@ -178,12 +197,16 @@ pub fn new_full<C: Send + Default + 'static>(
                 network: service.network(),
                 inherent_data_providers: inherent_data_providers.clone(),
                 on_exit: service.on_exit(),
-                telemetry_on_connect: Some(service.telemetry_on_connect_stream()),
+                telemetry_on_connect: Some(
+                    service.telemetry_on_connect_stream(),
+                ),
             };
 
             // the GRANDPA voter task is considered infallible, i.e.
             // if it fails we take down the service with it.
-            service.spawn_essential_task(grandpa::run_grandpa_voter(voter_config)?);
+            service.spawn_essential_task(grandpa::run_grandpa_voter(
+                voter_config,
+            )?);
         }
         (_, true) => {
             grandpa::setup_disabled_grandpa(

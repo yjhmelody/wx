@@ -15,9 +15,15 @@ where
     T: Into<std::ffi::OsString> + Clone,
     E: IntoExit,
 {
-    match parse_and_prepare::<NoCustom, NoCustom, _>(&version, "substrate-node", args) {
-        ParseAndPrepare::Run(cmd) => {
-            cmd.run::<(), _, _, _, _>(load_spec, exit, |exit, _cli_args, _custom_args, config| {
+    match parse_and_prepare::<NoCustom, NoCustom, _>(
+        &version,
+        "substrate-node",
+        args,
+    ) {
+        ParseAndPrepare::Run(cmd) => cmd.run::<(), _, _, _, _>(
+            load_spec,
+            exit,
+            |exit, _cli_args, _custom_args, config| {
                 info!("{}", version.name);
                 info!("  version {}", config.full_version());
                 info!("  by {}, 2017, 2018", version.author);
@@ -28,32 +34,39 @@ where
                 match config.roles {
                     ServiceRoles::LIGHT => run_until_exit(
                         runtime,
-                        service::new_light(config).map_err(|e| format!("{:?}", e))?,
+                        service::new_light(config)
+                            .map_err(|e| format!("{:?}", e))?,
                         exit,
                     ),
                     _ => run_until_exit(
                         runtime,
-                        service::new_full(config).map_err(|e| format!("{:?}", e))?,
+                        service::new_full(config)
+                            .map_err(|e| format!("{:?}", e))?,
                         exit,
                     ),
                 }
                 .map_err(|e| format!("{:?}", e))
-            })
-        }
+            },
+        ),
         ParseAndPrepare::BuildSpec(cmd) => cmd.run(load_spec),
-        ParseAndPrepare::ExportBlocks(cmd) => cmd.run_with_builder::<(), _, _, _, _, _>(
-            |config| Ok(new_full_start!(config).0),
-            load_spec,
-            exit,
-        ),
-        ParseAndPrepare::ImportBlocks(cmd) => cmd.run_with_builder::<(), _, _, _, _, _>(
-            |config| Ok(new_full_start!(config).0),
-            load_spec,
-            exit,
-        ),
+        ParseAndPrepare::ExportBlocks(cmd) => cmd
+            .run_with_builder::<(), _, _, _, _, _>(
+                |config| Ok(new_full_start!(config).0),
+                load_spec,
+                exit,
+            ),
+        ParseAndPrepare::ImportBlocks(cmd) => cmd
+            .run_with_builder::<(), _, _, _, _, _>(
+                |config| Ok(new_full_start!(config).0),
+                load_spec,
+                exit,
+            ),
         ParseAndPrepare::PurgeChain(cmd) => cmd.run(load_spec),
         ParseAndPrepare::RevertChain(cmd) => cmd
-            .run_with_builder::<(), _, _, _, _>(|config| Ok(new_full_start!(config).0), load_spec),
+            .run_with_builder::<(), _, _, _, _>(
+                |config| Ok(new_full_start!(config).0),
+                load_spec,
+            ),
         ParseAndPrepare::CustomCommand(_) => Ok(()),
     }?;
 
@@ -67,7 +80,11 @@ fn load_spec(id: &str) -> Result<Option<chain_spec::ChainSpec>, String> {
     })
 }
 
-fn run_until_exit<T, E>(mut runtime: Runtime, service: T, e: E) -> error::Result<()>
+fn run_until_exit<T, E>(
+    mut runtime: Runtime,
+    service: T,
+    e: E,
+) -> error::Result<()>
 where
     T: AbstractService,
     E: IntoExit,
@@ -101,7 +118,8 @@ where
 // handles ctrl-c
 pub struct Exit;
 impl IntoExit for Exit {
-    type Exit = future::MapErr<oneshot::Receiver<()>, fn(oneshot::Canceled) -> ()>;
+    type Exit =
+        future::MapErr<oneshot::Receiver<()>, fn(oneshot::Canceled) -> ()>;
     fn into_exit(self) -> Self::Exit {
         // can't use signal directly here because CtrlC takes only `Fn`.
         let (exit_send, exit) = oneshot::channel();

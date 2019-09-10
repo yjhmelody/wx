@@ -10,7 +10,9 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 use babe::AuthorityId as BabeId;
 use client::{
-    block_builder::api::{self as block_builder_api, CheckInherentsResult, InherentData},
+    block_builder::api::{
+        self as block_builder_api, CheckInherentsResult, InherentData,
+    },
     impl_runtime_apis, runtime_api as client_api,
 };
 use grandpa::fg_primitives::{self, ScheduledChange};
@@ -18,12 +20,13 @@ use grandpa::{AuthorityId as GrandpaId, AuthorityWeight as GrandpaWeight};
 use primitives::{crypto::key_types, OpaqueMetadata};
 use rstd::prelude::*;
 use sr_primitives::traits::{
-    BlakeTwo256, Block as BlockT, ConvertInto, DigestFor, NumberFor, StaticLookup, Verify,
+    BlakeTwo256, Block as BlockT, ConvertInto, DigestFor, NumberFor,
+    StaticLookup, Verify,
 };
 use sr_primitives::weights::Weight;
 use sr_primitives::{
-    create_runtime_str, generic, impl_opaque_keys, transaction_validity::TransactionValidity,
-    AnySignature, ApplyResult,
+    create_runtime_str, generic, impl_opaque_keys,
+    transaction_validity::TransactionValidity, AnySignature, ApplyResult,
 };
 #[cfg(feature = "std")]
 use version::NativeVersion;
@@ -201,7 +204,8 @@ impl indices::Trait for Runtime {
     /// will be problems!
     type AccountIndex = u32;
     /// Use the standard means of resolving an index hint from an id.
-    type ResolveHint = indices::SimpleResolveHint<Self::AccountId, Self::AccountIndex>;
+    type ResolveHint =
+        indices::SimpleResolveHint<Self::AccountId, Self::AccountIndex>;
     /// Determine whether an account is dead.
     type IsDeadAccount = Balances;
     /// The ubiquitous event type.
@@ -295,12 +299,19 @@ pub type SignedExtra = (
     balances::TakeFees<Runtime>,
 );
 /// Unchecked extrinsic type as expected by this runtime.
-pub type UncheckedExtrinsic = generic::UncheckedExtrinsic<Address, Call, Signature, SignedExtra>;
+pub type UncheckedExtrinsic =
+    generic::UncheckedExtrinsic<Address, Call, Signature, SignedExtra>;
 /// Extrinsic type that has already been checked.
-pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, Call, SignedExtra>;
+pub type CheckedExtrinsic =
+    generic::CheckedExtrinsic<AccountId, Call, SignedExtra>;
 /// Executive: handles dispatch to the various modules.
-pub type Executive =
-    executive::Executive<Runtime, Block, system::ChainContext<Runtime>, Runtime, AllModules>;
+pub type Executive = executive::Executive<
+    Runtime,
+    Block,
+    system::ChainContext<Runtime>,
+    Runtime,
+    AllModules,
+>;
 
 impl_runtime_apis! {
     impl client_api::Core<Block> for Runtime {

@@ -3,8 +3,8 @@ use grandpa_primitives::AuthorityId as GrandpaId;
 use primitives::{Pair, Public};
 use substrate_service;
 use wx_node_runtime::{
-    AccountId, BabeConfig, BalancesConfig, GenesisConfig, GrandpaConfig, IndicesConfig, SudoConfig,
-    SystemConfig, WASM_BINARY,
+    AccountId, BabeConfig, BalancesConfig, GenesisConfig, GrandpaConfig,
+    IndicesConfig, SudoConfig, SystemConfig, WASM_BINARY,
 };
 
 // Note this is the URL for the telemetry server
@@ -25,14 +25,18 @@ pub enum Alternative {
 }
 
 /// Helper function to generate a crypto pair from seed
-pub fn get_from_seed<TPublic: Public>(seed: &str) -> <TPublic::Pair as Pair>::Public {
+pub fn get_from_seed<TPublic: Public>(
+    seed: &str,
+) -> <TPublic::Pair as Pair>::Public {
     TPublic::Pair::from_string(&format!("//{}", seed), None)
         .expect("static values are valid; qed")
         .public()
 }
 
 /// Helper function to generate stash, controller and session key from seed
-pub fn get_authority_keys_from_seed(seed: &str) -> (AccountId, AccountId, GrandpaId, BabeId) {
+pub fn get_authority_keys_from_seed(
+    seed: &str,
+) -> (AccountId, AccountId, GrandpaId, BabeId) {
     (
         get_from_seed::<AccountId>(&format!("{}//stash", seed)),
         get_from_seed::<AccountId>(seed),
