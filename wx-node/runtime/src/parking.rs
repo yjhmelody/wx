@@ -34,32 +34,37 @@ pub struct ParkingLot<T: Trait> {
     pub longitude: i32,
 }
 
-impl<T: Trait> ParkingLot<T> {
+impl<T: Trait> ParkingLot<T> 
+{
     pub fn compute_new_fee(
         &self,
         new_time: T::Moment,
         old_time: T::Moment,
-    ) -> result::Result<BalanceOf<T>, &'static str> {
-        let current_num = self
-            .capacity
-            .checked_sub(self.remain.clone())
+    ) -> result::Result<BalanceOf<T>, &'static str>
+     {
+        let capacity = self.capacity as u64;
+        let remain = self.remain as u64;
+        let current_num = 
+            capacity
+            .checked_sub(remain)
             .ok_or("Remained num greater than capacity")?;
         let diff_time = new_time
             .checked_sub(&old_time)
             .ok_or("current time must greater than exiting time")?;
-        let diff_time: u32 = TryInto::<u32>::try_into(diff_time)
+        let diff_time = TryInto::<u64>::try_into(diff_time)
             .map_err(|_| "Time diff overflow")?;
         let diff_price = self
             .max_price
             .checked_sub(&self.min_price)
             .ok_or("Max price must be greater than min price")?;
-        let diff_price: u32 = TryInto::<u32>::try_into(diff_price)
+        let diff_price = TryInto::<u64>::try_into(diff_price)
             .map_err(|_| "Price diff overflow")?;
-        let min_price: u32 = TryInto::<u32>::try_into(self.min_price)
+        let min_price = TryInto::<u64>::try_into(self.min_price)
             .map_err(|_| "Min price overflow")?;
         let res =
-            diff_time * (current_num * diff_price / self.capacity + min_price);
-        Ok(res.into())
+            diff_time * (current_num * diff_price / capacity + min_price);
+
+        res.try_into().map_err(|_| "Fee overflow")
     }
 }
 
@@ -227,7 +232,7 @@ decl_module! {
             let user = ensure_signed(origin)?;
             let parking_info = Self::user_parking_info(user.clone()).ok_or("User has not entered a parking lot")?;
             let parking_lot_hash = parking_info.parking_lot_hash.clone();
-            let mut parking_lot = Self::parking_lots(parking_lot_hash).ok_or("The parking lot has not existed")?;
+            let mut parking_lot = Self::parking_lots(parking_lot_hash).expect("User must has the parking info. Qed");
             let owner = parking_lot.owner.clone();
             let accs: Vec<_> = Self::current_parking_accounts(parking_lot_hash);
             let mut new_accs = vec![];
@@ -295,7 +300,7 @@ impl<T: Trait> Module<T> {
         T::Currency::transfer(&user, &owner, new_parking_info.current_fee)
     }
 
-    /// Recompute all parking info for current parking lot
+    /// Recompute all parking fees for current parking lot
     fn recompute_all_fee(
         parking_lot: &ParkingLot<T>,
         parking_lot_hash: T::Hash,
@@ -477,14 +482,14 @@ mod tests {
         // t.into()
     }
 
-    // TODO: unit test
     #[test]
     fn test_new_parking_lot() {
         with_externalities(&mut new_test_ext(), || {
+            let user = 0;
             assert_eq!(Parking::all_parking_lots_count(), 2);
 
             assert_ok!(Parking::new_parking_lot(
-                Origin::signed(0),
+                Origin::signed(user),
                 b"test3".to_vec(),
                 50,
                 50,
@@ -494,7 +499,7 @@ mod tests {
             ));
 
             assert_eq!(Parking::all_parking_lots_count(), 3);
-            assert_eq!(Parking::owner_parking_lots_count(0), 2);
+            assert_eq!(Parking::owner_parking_lots_count(user), 2);
             assert_eq!(Parking::owner_parking_lots_count(1), 1);
         })
     }
@@ -527,6 +532,14 @@ mod tests {
             );
 
             assert_ok!(Parking::leaving(Origin::signed(user)));
+        })
+    }
+
+    #[test]
+    fn test_leving() {
+        with_externalities(&mut new_test_ext(), || {
+            let user = 0;
+            assert_err!(Parking::leaving(Origin::signed(user)), "User has not entered a parking lot");
         })
     }
 }
