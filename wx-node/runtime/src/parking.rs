@@ -8,7 +8,6 @@ use support::{
 };
 use system::ensure_signed;
 
-
 /// For Currency
 type BalanceOf<T> = <<T as Trait>::Currency as Currency<<T as system::Trait>::AccountId>>::Balance;
 
@@ -34,7 +33,6 @@ pub struct ParkingLot<T: Trait> {
 }
 
 pub const HOUR: u64 = 3600;
-
 
 
 impl<T: Trait> ParkingLot<T> {
@@ -139,6 +137,17 @@ decl_storage! {
         /// Parking info of current user
         UserParkingInfo get(user_parking_info): map T::AccountId => Option<ParkingInfo<T>>;
     }
+    
+	add_extra_genesis {
+		config(parking_lots): Vec<ParkingLot<T>>;
+
+        build(|config: &GenesisConfig<T>| {
+            for parking_lot in config.parking_lots.iter() {
+                let account = parking_lot.owner.clone();
+                <Module<T>>::_new_parking_lot(account, parking_lot.clone()).expect("Cannot be failed");
+            }
+        })
+	}
 }
 
 // The module's dispatchable functions.
@@ -172,18 +181,8 @@ decl_module! {
                 latitude,
                 longitude,
             };
-
-            let count = Self::owner_parking_lots_count(owner.clone());
-            let all = Self::all_parking_lots_count();
-
-            let parking_lot_hash = (<system::Module<T>>::random_seed(), &owner, count, all)
-                .using_encoded(<T as system::Trait>::Hashing::hash);
-
-            <ParkingLots<T>>::insert(parking_lot_hash, parking.clone());
-            <OwnerParkingLotsArray<T>>::insert((owner.clone(), count), parking_lot_hash);
-            <OwnerParkingLotsCount<T>>::insert(&owner, count+1);
-            AllParkingLotsCount::put(all+1);
-
+            
+            Self::_new_parking_lot(owner, parking.clone())?;
             Self::deposit_event(RawEvent::NewParkingLot(<timestamp::Module<T>>::get(), parking));
             Ok(())
         }
@@ -247,6 +246,21 @@ decl_module! {
 
 
 impl<T: Trait> Module<T> {
+
+        fn _new_parking_lot(owner: T::AccountId, parking: ParkingLot<T>) -> Result {            
+            let count = Self::owner_parking_lots_count(owner.clone());
+            let all = Self::all_parking_lots_count();
+
+            let parking_lot_hash = (<system::Module<T>>::random_seed(), &owner, count, all)
+                .using_encoded(<T as system::Trait>::Hashing::hash);
+
+            <ParkingLots<T>>::insert(parking_lot_hash, parking);
+            <OwnerParkingLotsArray<T>>::insert((owner.clone(), count), parking_lot_hash);
+            <OwnerParkingLotsCount<T>>::insert(&owner, count+1);
+            AllParkingLotsCount::put(all+1);
+            Ok(())
+        }
+
         /// Pay parking fee when user leaving
         fn pay_parking_fee(user: T::AccountId, parking_lot: &ParkingLot<T>) -> Result {
             let parking_info = Self::user_parking_info(user.clone()).ok_or("User must be in the parking lot")?;
@@ -306,6 +320,7 @@ mod tests {
     // configuration traits of modules we want to use.
     #[derive(Clone, Eq, PartialEq)]
     pub struct Test;
+
     parameter_types! {
         pub const BlockHashCount: u64 = 250;
         pub const MaximumBlockWeight: Weight = 1024;
@@ -331,6 +346,7 @@ mod tests {
         type Version = ();
     }
 
+
 	parameter_types! {
 		pub const ExistentialDeposit: u64 = 0;
 		pub const TransferFee: u64 = 0;
@@ -338,7 +354,6 @@ mod tests {
 		pub const TransactionBaseFee: u64 = 0;
 		pub const TransactionByteFee: u64 = 0;
 	}
-
     impl balances::Trait for Test {
         type Balance = u64;
 		type OnFreeBalanceZero = ();
@@ -355,15 +370,16 @@ mod tests {
 		type WeightToFee = ();
     }
 
+
     parameter_types! {
         pub const MinimumPeriod: u64 = 1000;
     }
-
     impl timestamp::Trait for Test {
         type Moment = u64;
         type OnTimestampSet = ();
         type MinimumPeriod = MinimumPeriod;
     }
+
 
     impl Trait for Test {
         type Event = ();
@@ -375,10 +391,40 @@ mod tests {
     // This function basically just builds a genesis storage key/value store according to
     // our desired mockup.
     fn new_test_ext() -> TestExternalities<Blake2Hasher> {
-        system::GenesisConfig::default()
+        let t = system::GenesisConfig::default()
             .build_storage::<Test>()
             .unwrap()
-            .into()
+            .0;
+        
+        t.extend(balances::GenesisConfig::<Test>::default().build_storage().unwrap().0);
+        
+        t.extend(GenesisConfig::<Test>{
+            parking_lots: vec![
+                ParkingLot {
+                    name: b"test1",
+                    owner: 0,
+                    capacity: 10,
+                    min_price: 10,
+                    max_price: 100,
+                    remain: 10,
+                    latitude: 60,
+                    longitude: 60,
+                },
+
+                ParkingLot {
+                    name: b"test2",
+                    owner: 1,
+                    capacity: 100,
+                    min_price: 1,
+                    max_price: 1000,
+                    remain: 100,
+                    latitude: 61,
+                    longitude: 61,
+                }
+            ],
+        }.build_storage().unwrap().0);
+
+        t.into()
     }
 
     #[test]
