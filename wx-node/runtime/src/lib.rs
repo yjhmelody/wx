@@ -275,7 +275,7 @@ construct_runtime!(
 		Indices: indices::{default, Config<T>},
 		Balances: balances,
 		Sudo: sudo,
-		Parking: parking::{Module, Call, Storage, Event<T>},
+		Parking: parking::{Module, Call, Storage, Config<T>, Event<T>},
 	}
 );
 

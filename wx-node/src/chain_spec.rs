@@ -4,8 +4,9 @@ use primitives::{Pair, Public};
 use substrate_service;
 use wx_node_runtime::{
     AccountId, BabeConfig, BalancesConfig, GenesisConfig, GrandpaConfig,
-    IndicesConfig, SudoConfig, SystemConfig, WASM_BINARY,
+    IndicesConfig, SudoConfig, SystemConfig, WASM_BINARY, ParkingConfig,
 };
+use runtime::parking::ParkingLot;
 
 // Note this is the URL for the telemetry server
 //const STAGING_TELEMETRY_URL: &str = "wss://telemetry.polkadot.io/submit/";
@@ -150,6 +151,30 @@ fn testnet_genesis(
                 .iter()
                 .map(|x| (x.2.clone(), 1))
                 .collect(),
+        }),
+        parking: Some(ParkingConfig {
+            parking_lots: vec![
+                ParkingLot {
+                    name: b"test1".to_vec(),
+                    owner: 0,
+                    capacity: 10,
+                    min_price: 10,
+                    max_price: 100,
+                    remain: 10,
+                    latitude: 60,
+                    longitude: 60,
+                },
+                ParkingLot {
+                    name: b"test2".to_vec(),
+                    owner: 1,
+                    capacity: 100,
+                    min_price: 1,
+                    max_price: 1000,
+                    remain: 100,
+                    latitude: 61,
+                    longitude: 61,
+                },
+            ],
         }),
     }
 }

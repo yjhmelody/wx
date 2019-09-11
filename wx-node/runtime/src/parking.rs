@@ -8,6 +8,11 @@ use support::{
 };
 use system::ensure_signed;
 
+#[cfg(feature = "std")]
+use sr_primitives::{Serialize, Deserialize};
+#[cfg(feature = "std")]
+pub use serde;
+
 /// For Currency
 type BalanceOf<T> = <<T as Trait>::Currency as Currency<
     <T as system::Trait>::AccountId,
@@ -21,7 +26,7 @@ pub trait Trait: timestamp::Trait {
     type Currency: Currency<Self::AccountId>;
 }
 
-#[cfg_attr(feature = "std", derive(Debug))]
+#[cfg_attr(feature = "std", derive(Debug, Serialize, Deserialize))]
 #[derive(Encode, Decode, Default, Clone, PartialEq, Eq)]
 pub struct ParkingLot<T: Trait> {
     pub name: Vec<u8>,
