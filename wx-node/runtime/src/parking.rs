@@ -9,9 +9,7 @@ use support::{
 use system::ensure_signed;
 
 #[cfg(feature = "std")]
-use sr_primitives::{Serialize, Deserialize};
-#[cfg(feature = "std")]
-pub use serde;
+use serde::{Serialize, Deserialize};
 
 /// For Currency
 type BalanceOf<T> = <<T as Trait>::Currency as Currency<
@@ -26,7 +24,11 @@ pub trait Trait: timestamp::Trait {
     type Currency: Currency<Self::AccountId>;
 }
 
-#[cfg_attr(feature = "std", derive(Debug, Serialize, Deserialize))]
+#[cfg_attr(feature = "std", serde(bound(
+       deserialize = "T::AccountId: Deserialize<'de>, BalanceOf<T>: Deserialize<'de>",
+       serialize = "T::AccountId: Serialize, BalanceOf<T>: Serialize"
+)))]
+#[cfg_attr(any(feature = "std", test), derive(Debug, Serialize, Deserialize))]
 #[derive(Encode, Decode, Default, Clone, PartialEq, Eq)]
 pub struct ParkingLot<T: Trait> {
     pub name: Vec<u8>,
